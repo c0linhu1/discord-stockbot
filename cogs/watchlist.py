@@ -110,6 +110,8 @@ class Watchlist(commands.Cog):
         symbol="Stock symbol (e.g., AAPL, TSLA, MSFT)",
         company_name="Optional company name for reference"
     )
+
+
     async def add_company_slash(self, interaction: discord.Interaction, symbol: str, company_name: str = None):
         """Add a company to the user's watchlist"""
         guild = interaction.guild
@@ -120,13 +122,20 @@ class Watchlist(commands.Cog):
             await interaction.response.send_message("❌ Response handler not available.", ephemeral=True)
             return
 
-        # Validate symbol (basic validation)
+        # Validate symbol 
         symbol = symbol.upper().strip()
         if not symbol or len(symbol) > 10 or not symbol.isalpha():
             message = "❌ Please provide a valid stock symbol (letters only, max 10 characters)"
             await response_handler.send_response(interaction, message)
             return
 
+        # Make a watchlist limit
+        watchlist_count = db_manager.get_watchlist_count(user.id, guild.id)
+        if watchlist_count > 15:
+            message = "You watchlist is full. Maximum 15 companies allowed. " \
+            "Please use the '/remove_company' command to make space"
+            await response_handler.send_response(interaction, message)
+            
         # Add to database
         success = db_manager.add_to_watchlist(user.id, guild.id, symbol, company_name)
         

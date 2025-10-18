@@ -65,7 +65,7 @@ class DatabaseManager:
         
         # Clean up old articles on startup (keep last 500 per guild)
         self.cleanup_old_articles()
-    
+        
     def get_session(self):
         """Get a new database session"""
         return self.SessionLocal()
@@ -269,6 +269,14 @@ class DatabaseManager:
             except Exception as e:
                 print(f"Error getting watchlist: {e}")
                 return []
-
+            
+    def get_watchlist_count(self, user_id: int, guild_id: int) -> int:
+        """Get count of items in user's watchlist"""
+        with self.get_session() as session:
+            return session.query(WatchlistItem)\
+                .filter(WatchlistItem.user_id == user_id)\
+                .filter(WatchlistItem.guild_id == guild_id)\
+                .count()
+        
 # Global database manager instance
 db_manager = DatabaseManager()

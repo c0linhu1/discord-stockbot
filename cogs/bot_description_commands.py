@@ -22,7 +22,7 @@ class BotHelp(commands.Cog):
                 return self.description_file.read_text(encoding="utf-8")
         except Exception as e:
             print(f"Error reading description file: {e}")
-        return 
+        return  
 
     async def post_help_message(self, guild: discord.Guild):
         """Posts or updates the help embed without duplicates - now fully atomic."""
@@ -87,7 +87,7 @@ class BotHelp(commands.Cog):
         try:
             messages_to_delete = []
             
-            # Fetch recent messages
+            # fetch recent help message
             async for message in channel.history(limit=1):
                 if (message.author == self.bot.user and 
                     message.embeds and 
