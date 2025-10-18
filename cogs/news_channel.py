@@ -18,15 +18,18 @@ FINNHUB_API_KEYS = [
 
 MARKETAUX_API_KEYS = [
     os.getenv("MARKETAUX_API_KEY_1"),
-    os.getenv("MARKETAUX_API_KEY_2")
+    os.getenv("MARKETAUX_API_KEY_2"),
+    os.getenv("MARKETAUX_API_KEY_3"),
+    os.getenv("MARKETAUX_API_KEY_4")
+
 ]
 
 FINNHUB_URL = "https://finnhub.io/api/v1/news?category={category}&token={token}"
 FINNHUB_CATEGORIES = ["general", "forex", "crypto", "merger"]
 
 FINNHUB_FETCH_INTERVAL = 2   # minutes
-MARKETAUX_FETCH_INTERVAL = 8
-HEARTBEAT_COOLDOWN = timedelta(minutes=15)
+MARKETAUX_FETCH_INTERVAL = 3
+HEARTBEAT_COOLDOWN = timedelta(minutes=10)
 
 
 def make_identifier(article, prefix=""):
