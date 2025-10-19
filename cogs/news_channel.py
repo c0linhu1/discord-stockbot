@@ -6,29 +6,30 @@ import hashlib
 from database import db_manager
 import os
 from dotenv import load_dotenv
+import tweepy
+
 
 load_dotenv()
 
-FINNHUB_API_KEYS = [
-    os.getenv("FINNHUB_API_KEY_1"),
-    os.getenv("FINNHUB_API_KEY_2"),
-    os.getenv("FINNHUB_API_KEY_3"),
-    os.getenv("FINNHUB_API_KEY_4")
-]
-
-MARKETAUX_API_KEYS = [
-    os.getenv("MARKETAUX_API_KEY_1"),
-    os.getenv("MARKETAUX_API_KEY_2"),
-    os.getenv("MARKETAUX_API_KEY_3"),
-    os.getenv("MARKETAUX_API_KEY_4")
-
-]
-
+FINNHUB_API_KEYS = [os.getenv(f"FINNHUB_API_KEY_{i}") for i in range(1, 5)]
 FINNHUB_URL = "https://finnhub.io/api/v1/news?category={category}&token={token}"
 FINNHUB_CATEGORIES = ["general", "forex", "crypto", "merger"]
-
 FINNHUB_FETCH_INTERVAL = 2   # minutes
-MARKETAUX_FETCH_INTERVAL = 3
+
+MARKETAUX_API_KEYS = [os.getenv(f"MARKETAUX_API_KEY_{i}") for i in range(1, 5)]
+MARKETAUX_FETCH_INTERVAL = 3    # minutes
+
+
+TWITTER_API_KEYS = [os.getenv(f"TWITTER_X_API_KEY{i}") for i in range(1, 7)]
+
+# twtiter limits to 100 post pulls a month per account - working with what i got
+TWITTER_FETCH_INTERVAL = 90    # minutes
+TWITTER_START_HOUR = 9
+TWITTER_END_HOUR = 15 # 3pm
+TWITTER_ACCOUNTS = ["FirstSquawk", "zerohedge"]
+POSTS_PER_ACC = 2
+
+
 HEARTBEAT_COOLDOWN = timedelta(minutes=10)
 
 
@@ -46,10 +47,13 @@ class NewsCog(commands.Cog):
         self.bot = bot
         self.fetch_finnhub.start()
         self.fetch_marketaux.start()
+        self.fetch_twitter.start()
+
 
     def cog_unload(self):
         self.fetch_finnhub.cancel()
         self.fetch_marketaux.cancel()
+        self.fetch_twitter.cancel()
 
     async def send_articles(self, guild, articles, source):
         """Send new articles or heartbeat if none."""
@@ -71,7 +75,7 @@ class NewsCog(commands.Cog):
                 db_manager.mark_article_seen(guild.id, identifier, source)
                 sent_any = True
 
-        # 🔄 Heartbeat if no new news
+        # create heartbeat if no new news
         if not sent_any:
             now = datetime.utcnow()
             last_sent = db_manager.get_last_heartbeat(guild.id)
@@ -84,6 +88,67 @@ class NewsCog(commands.Cog):
                 )
                 # Update heartbeat in database
                 db_manager.update_heartbeat(guild.id, now)
+
+
+    @tasks.loop(minutes=TWITTER_FETCH_INTERVAL)
+    async def fetch_twitter(self):
+        """Fetch from Twitter ONLY from 9am to 3pm bc of limit"""
+        if not (TWITTER_START_HOUR <= datetime.now().hour <= TWITTER_END_HOUR):
+            return
+        
+        all_tweets = []
+
+        for i, key in enumerate(TWITTER_API_KEYS):
+            try:
+                # tweepy client accesses Twitter API
+                client = tweepy.Client(bearer_token=key)
+                for username in TWITTER_ACCOUNTS:
+                    user = client.get_user(username=username)
+                    if not user.data:
+                        print(f"couldnt find {username}")
+                        continue
+                    
+                    tweets = client.get_users_tweets(
+                        id = user.data.id,
+                        max_results = POSTS_PER_ACC,
+                        tweet_fields = ['created_at', 'text', 'id'],
+                        exclude = ['retweets', 'replies']
+                    )   
+
+                    if tweets.data:
+                        for tweet in tweets.data:
+                            all_tweets.append({
+                                'username': username,
+                                'created_at': tweet.created_at,
+                                'text': tweet.text,
+                                'id': tweet.id,
+                                'url': f"https://twitter.com/{username}/status/{tweet.id}"
+                            })
+                # check to see if we actually pulled any tweets from current key         
+                if all_tweets:
+                    print(f"Fetched {len(all_tweets)} tweets with twitter API key {i+1}")
+                    break
+            # keep going if one api key fails
+            except Exception as e:
+                print(f"twitter API key {i+1} failled: {e}")
+                continue
+        if not all_tweets:
+            print("NO TWITTER API KEY WORKED")
+            return
+        
+        # cant use 'send_articles' bc format for twitter api is different 
+        for guild in self.bot.guilds:
+            channel = discord.utils.get(guild.text_channels, name="news")
+            if not channel:
+                continue
+            # looking to see if tweet was already posted in channel
+            for tweet in reversed(all_tweets):
+                identifier = f"twitter-{tweet['id']}"
+                if not db_manager.is_article_seen(guild.id, identifier):
+                    embed = self.build_embed(tweet, "twitter")
+                    await channel.send(embed = embed)
+                    db_manager.mark_article_seen(guild.id, identifier, "twitter")
+
 
     @tasks.loop(minutes=FINNHUB_FETCH_INTERVAL)
     async def fetch_finnhub(self):
@@ -103,11 +168,11 @@ class NewsCog(commands.Cog):
                             all_news_items.extend(filtered)
                         elif resp.status == 429:  # Rate limit exceeded
                             text = await resp.text()
-                            print(f"Finnhub API key {key_index + 1} rate limited for {category}: {text}")
+                            print(f"--Finnhub API key {key_index + 1} rate limited for {category}: {text}")
                             return None
                         else:
                             text = await resp.text()
-                            print(f"Finnhub error {resp.status} for {category} with key {key_index + 1}: {text}")
+                            print(f"--Finnhub error {resp.status} for {category} with key {key_index + 1}: {text}")
                             return None
             
             return all_news_items
@@ -123,17 +188,17 @@ class NewsCog(commands.Cog):
                 
                 if all_news_items is not None:
                     successful_key = i + 1
-                    print(f"✅ Successfully fetched news with Finnhub API key {successful_key}")
+                    print(f"*** Successfully fetched news with Finnhub API key {successful_key}")
                     break
                 else:
-                    print(f"Finnhub API key {i + 1} failed, trying next key...")
+                    print(f"--Finnhub API key {i + 1} failed, trying next key...")
 
             if all_news_items is None:
-                print("All Finnhub API keys failed or reached limits.")
+                print("---All Finnhub API keys failed or reached limits.")
                 return
 
         except Exception as e:
-            print(f"Error fetching Finnhub: {e}")
+            print(f"---Error fetching Finnhub: {e}")
             return
 
         for guild in self.bot.guilds:
@@ -148,11 +213,11 @@ class NewsCog(commands.Cog):
                 async with session.get(url) as resp:
                     if resp.status == 429:  # Rate limit exceeded
                         text = await resp.text()
-                        print(f"Marketaux API key {key_index + 1} rate limited: {text}")
+                        print(f"--Marketaux API key {key_index + 1} rate limited: {text}")
                         return None
                     elif resp.status != 200:
                         text = await resp.text()
-                        print(f"Marketaux error {resp.status} with key {key_index + 1}: {text}")
+                        print(f"--Marketaux error {resp.status} with key {key_index + 1}: {text}")
                         return None
                     data = await resp.json()
 
@@ -177,28 +242,31 @@ class NewsCog(commands.Cog):
                 
                 if data is not None:
                     successful_key = i + 1
-                    print(f"✅ Successfully fetched news with Marketaux API key {successful_key}")
+                    print(f"***Successfully fetched news with Marketaux API key {successful_key}")
                     break
                 else:
-                    print(f"❌ Marketaux API key {i + 1} failed, trying next key...")
+                    print(f"--Marketaux API key {i + 1} failed, trying next key...")
 
             if data is None:
-                print("❌ All Marketaux API keys failed or reached limits.")
+                print("---All Marketaux API keys failed or reached limits.")
                 return
 
             news_items = data.get("data", [])
 
         except Exception as e:
-            print(f"Error fetching Marketaux: {e}")
+            print(f"---Error fetching Marketaux: {e}")
             return
 
         for guild in self.bot.guilds:
             await self.send_articles(guild, news_items, "marketaux")
 
+    # prioritizing getting news as soon as bot is run
+    @fetch_twitter.before_loop
     @fetch_finnhub.before_loop
     @fetch_marketaux.before_loop
     async def before_loop(self):
         await self.bot.wait_until_ready()
+
 
     def build_embed(self, article, source):
         """Build a Discord embed for an article."""
@@ -206,18 +274,36 @@ class NewsCog(commands.Cog):
             headline = article.get("headline", "No title")
             summary = article.get("summary", "")
             timestamp = article.get("datetime")
-            color = discord.Color.blue()
+            color = discord.Color.yellow()
+        
+        # twitter data structure is diff so cant use same embed
+        elif source == "twitter":
+            headline = f"🐦 @{article['username']}"
+            summary = article.get("text", "")
+            timestamp = article.get("created_at")
+            url = article.get("url", "")
+            embed = discord.Embed(
+                title = headline,
+                url = url,
+                description = summary[:300] + ("..." if len(summary) > 300 else ""),
+                color = discord.Color.blue(),
+                timestamp = timestamp
+            )
+            embed.set_footer(text=f"Twitter: @{article['username']}")
+            return embed
+
+
         else:
             headline = article.get("title", "No title")
             summary = article.get("description", "")
             timestamp = article.get("published_at")
             color = discord.Color.green()
-
+            
         url = article.get("url", "")
         embed = discord.Embed(
             title=headline,
             url=url,
-            description=(summary[:200] + "...") if summary else "No description",
+            description=(summary[:300] + "...") if summary else "No description",
             color=color
         )
 
@@ -230,7 +316,7 @@ class NewsCog(commands.Cog):
             except Exception:
                 pass
 
-        embed.set_footer(text=article.get("source", source.capitalize()))
+        embed.set_footer(text=article.get("source"))
         return embed
 
 
