@@ -64,3 +64,6 @@ python main.py
 - `/show_watchlist` - Display your watchlist with interactive buttons
 - `/delete_watchlist` - Delete your private watchlist channel
 
+## Twitter API
+- The api keys for twitter are the BEARER TOKENS
+- Free Twitter API has a 15 min cooldown time for each dev account 

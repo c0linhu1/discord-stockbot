@@ -1,7 +1,6 @@
 
 .env
 api_keys_emails.txt
-
 bot_data.db
 
 
@@ -22,4 +21,4 @@ ENV/
 *.swp
 
 .DS_Store
-Thumbs.dbapi_keys_emails.txt
+

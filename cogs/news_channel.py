@@ -7,6 +7,7 @@ from database import db_manager
 import os
 from dotenv import load_dotenv
 import tweepy
+from tweepy.errors import TooManyRequests, Unauthorized
 
 
 load_dotenv()
@@ -20,14 +21,15 @@ MARKETAUX_API_KEYS = [os.getenv(f"MARKETAUX_API_KEY_{i}") for i in range(1, 5)]
 MARKETAUX_FETCH_INTERVAL = 3    # minutes
 
 
-TWITTER_API_KEYS = [os.getenv(f"TWITTER_X_API_KEY{i}") for i in range(1, 7)]
+TWITTER_API_KEYS = [os.getenv(f"TWITTER_X_API_KEY{i}") for i in range(1, 16)]
 
 # twtiter limits to 100 post pulls a month per account - working with what i got
 TWITTER_FETCH_INTERVAL = 90    # minutes
 TWITTER_START_HOUR = 9
 TWITTER_END_HOUR = 15 # 3pm
 TWITTER_ACCOUNTS = ["FirstSquawk", "zerohedge"]
-POSTS_PER_ACC = 2
+# minimum 5 posts per acc for some reason
+POSTS_PER_ACC = 5
 
 
 HEARTBEAT_COOLDOWN = timedelta(minutes=10)
@@ -66,7 +68,7 @@ class NewsCog(commands.Cog):
         for article in reversed(articles):
             identifier = make_identifier(article, prefix=f"{source}-")
             
-            # Check if article has been seen using database
+            # using database to see if article has been posted already
             if not db_manager.is_article_seen(guild.id, identifier):
                 embed = self.build_embed(article, source)
                 await channel.send(embed=embed)
@@ -86,67 +88,88 @@ class NewsCog(commands.Cog):
                     "⚠️ ATTENTION ⚠️ StockBot can miss news. News may be delayed from 1 minute up to 24 hours. "
                     "Do your own research for faster or equity-specific news.\n"
                 )
-                # Update heartbeat in database
+                # updating heatbeat in db
                 db_manager.update_heartbeat(guild.id, now)
 
 
     @tasks.loop(minutes=TWITTER_FETCH_INTERVAL)
     async def fetch_twitter(self):
         """Fetch from Twitter ONLY from 9am to 3pm bc of limit"""
+
+        # only run from 9am to 3pm due to api request limits
         if not (TWITTER_START_HOUR <= datetime.now().hour <= TWITTER_END_HOUR):
             return
         
         all_tweets = []
+        accounts_fetched = set()
 
         for i, key in enumerate(TWITTER_API_KEYS):
+            # skip if we got all accounts already
+            if len(accounts_fetched) == len(TWITTER_ACCOUNTS):
+                print("All accounts fetched successfully")
+                break
+                
             try:
-                # tweepy client accesses Twitter API
                 client = tweepy.Client(bearer_token=key)
+                
                 for username in TWITTER_ACCOUNTS:
-                    user = client.get_user(username=username)
-                    if not user.data:
-                        print(f"couldnt find {username}")
+                    if username in accounts_fetched:
                         continue
-                    
-                    tweets = client.get_users_tweets(
-                        id = user.data.id,
-                        max_results = POSTS_PER_ACC,
-                        tweet_fields = ['created_at', 'text', 'id'],
-                        exclude = ['retweets', 'replies']
-                    )   
+                        
+                    try:
+                        user = client.get_user(username=username)
+                        if not user.data:
+                            print(f"Couldn't find @{username}")
+                            continue
+                        
+                        tweets = client.get_users_tweets(
+                            id=user.data.id,
+                            max_results=POSTS_PER_ACC,
+                            tweet_fields=['created_at', 'text', 'id'],
+                            exclude=['retweets', 'replies']
+                        )
 
-                    if tweets.data:
-                        for tweet in tweets.data:
-                            all_tweets.append({
-                                'username': username,
-                                'created_at': tweet.created_at,
-                                'text': tweet.text,
-                                'id': tweet.id,
-                                'url': f"https://twitter.com/{username}/status/{tweet.id}"
-                            })
-                # check to see if we actually pulled any tweets from current key         
-                if all_tweets:
-                    print(f"Fetched {len(all_tweets)} tweets with twitter API key {i+1}")
-                    break
-            # keep going if one api key fails
-            except Exception as e:
-                print(f"twitter API key {i+1} failled: {e}")
+                        if tweets.data:
+                            for tweet in tweets.data:
+                                all_tweets.append({
+                                    'username': username,
+                                    'created_at': tweet.created_at,
+                                    'text': tweet.text,
+                                    'id': tweet.id,
+                                    'url': f"https://twitter.com/{username}/status/{tweet.id}"
+                                })
+                            accounts_fetched.add(username)
+                            print(f"*** Fetched {len(tweets.data)} tweets from @{username} with API key {i+1}")
+                            
+                    except TooManyRequests:
+                        print(f"--Rate limited on @{username} with key {i+1}, trying next key")
+                        continue
+                        
+            except TooManyRequests:
+                print(f"---API key {i+1} rate limited, trying next key")
                 continue
+            except Unauthorized:
+                print(f"---API key {i+1} unauthorized")
+                continue
+        
         if not all_tweets:
-            print("NO TWITTER API KEY WORKED")
+            print("---No tweets fetched - all keys rate limited or failed")
             return
         
-        # cant use 'send_articles' bc format for twitter api is different 
+        # Post tweets to Discord
         for guild in self.bot.guilds:
             channel = discord.utils.get(guild.text_channels, name="news")
             if not channel:
                 continue
-            # looking to see if tweet was already posted in channel
+                
             for tweet in reversed(all_tweets):
+                # identifier is different from articles
                 identifier = f"twitter-{tweet['id']}"
+                # posting recent articles - making sure no duplicates
                 if not db_manager.is_article_seen(guild.id, identifier):
                     embed = self.build_embed(tweet, "twitter")
-                    await channel.send(embed = embed)
+                    await channel.send(embed=embed)
+                    # making sure tweet is seen in db after posting
                     db_manager.mark_article_seen(guild.id, identifier, "twitter")
 
 
@@ -163,7 +186,7 @@ class NewsCog(commands.Cog):
                     async with session.get(url) as resp:
                         if resp.status == 200:
                             news_items = await resp.json()
-                            # Filter: only include from last 2 days
+                            # only include from last 2 days
                             filtered = [n for n in news_items if n.get("datetime", 0) >= cutoff]
                             all_news_items.extend(filtered)
                         elif resp.status == 429:  # Rate limit exceeded
