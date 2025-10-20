@@ -235,12 +235,10 @@ class NewsCog(commands.Cog):
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as resp:
                     if resp.status == 429:  # Rate limit exceeded
-                        text = await resp.text()
-                        print(f"--Marketaux API key {key_index + 1} rate limited: {text}")
+                        print(f"--Marketaux API key {key_index + 1} rate limited")
                         return None
                     elif resp.status != 200:
-                        text = await resp.text()
-                        print(f"--Marketaux error {resp.status} with key {key_index + 1}: {text}")
+                        print(f"--Marketaux usage limit with key {key_index + 1}")
                         return None
                     data = await resp.json()
 
