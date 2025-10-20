@@ -12,13 +12,13 @@ from tweepy.errors import TooManyRequests, Unauthorized
 
 load_dotenv()
 
-FINNHUB_API_KEYS = [os.getenv(f"FINNHUB_API_KEY_{i}") for i in range(1, 5)]
+FINNHUB_API_KEYS = [os.getenv(f"FINNHUB_API_KEY_{i}") for i in range(1, 11)]
 FINNHUB_URL = "https://finnhub.io/api/v1/news?category={category}&token={token}"
 FINNHUB_CATEGORIES = ["general", "forex", "crypto", "merger"]
-FINNHUB_FETCH_INTERVAL = 2   # minutes
+FINNHUB_FETCH_INTERVAL = 1   # minutes
 
-MARKETAUX_API_KEYS = [os.getenv(f"MARKETAUX_API_KEY_{i}") for i in range(1, 5)]
-MARKETAUX_FETCH_INTERVAL = 3    # minutes
+MARKETAUX_API_KEYS = [os.getenv(f"MARKETAUX_API_KEY_{i}") for i in range(1, 13)]
+MARKETAUX_FETCH_INTERVAL = 1    # minutes
 
 
 TWITTER_API_KEYS = [os.getenv(f"TWITTER_X_API_KEY{i}") for i in range(1, 16)]

@@ -8,8 +8,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY_1")
-FINNHUB_API_KEY2 = os.getenv("FINNHUB_API_KEY_2")
+FINNHUB_API_KEYS = [os.getenv(f"FINNHUB_API_KEY_{i}") for i in range(1, 11)]
 
 class StockInfo(commands.Cog):
     def __init__(self, bot):
@@ -17,7 +16,10 @@ class StockInfo(commands.Cog):
 
     async def get_stock_data_finnhub(self, symbol: str):
         """Fetch stock data from Finnhub API with backup key fallback"""
-        for api_key in [FINNHUB_API_KEY, FINNHUB_API_KEY2]:
+        for i, api_key in enumerate(FINNHUB_API_KEYS):
+            if not api_key:  # Skip empty keys
+                continue
+                
             try:
                 async with aiohttp.ClientSession() as session:
                     # Fetch both quote and profile data concurrently
@@ -27,8 +29,13 @@ class StockInfo(commands.Cog):
                     async with session.get(quote_url) as quote_resp, \
                                session.get(profile_url) as profile_resp:
                         
+                        if quote_resp.status == 429:
+                            print(f"--Finnhub stock API key {i + 1} rate limited")
+                            continue  
+                        
                         if quote_resp.status != 200:
-                            continue  # Try next API key
+                            print(f"--Finnhub stock API key {i + 1} returned status {quote_resp.status}")
+                            continue 
                         
                         quote_data = await quote_resp.json()
                         profile_data = {}
@@ -38,7 +45,10 @@ class StockInfo(commands.Cog):
                 # Process the data
                 current_price = quote_data.get('c', 0)
                 if current_price == 0:  # Invalid data
+                    print(f"--Invalid price data for {symbol} with API key {i + 1}")
                     continue
+                
+                print(f"*** Successfully fetched stock data for {symbol} with API key {i + 1}")
                 
                 return {
                     'symbol': symbol.upper(),
@@ -57,9 +67,11 @@ class StockInfo(commands.Cog):
                         }
                     }
                 }
-            except Exception:
+            except Exception as e:
+                print(f"--Error fetching stock data with API key {i + 1}: {e}")
                 continue  # Try next API key
         
+        print(f"---All Finnhub API keys failed for stock {symbol}")
         return None  # All keys failed
 
     def create_stock_info_embed(self, stock_data):

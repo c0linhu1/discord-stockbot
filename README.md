@@ -16,7 +16,7 @@ A Discord bot that provides financial news and stock market information.
 - Discord Bot Token
 - Finnhub API Keys
 - Marketaux API Keys
-
+- Twitter API Keys
 ### Installation
 
 1. Clone the repository:
