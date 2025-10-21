@@ -25,8 +25,8 @@ TWITTER_API_KEYS = [os.getenv(f"TWITTER_X_API_KEY{i}") for i in range(1, 16)]
 
 # twtiter limits to 100 post pulls a month per account - working with what i got
 TWITTER_FETCH_INTERVAL = 90    # minutes
-TWITTER_START_HOUR = 0
-TWITTER_END_HOUR = 23 # 3pm
+TWITTER_START_HOUR = 9
+TWITTER_END_HOUR = 15 # 3pm
 TWITTER_ACCOUNTS = ["FirstSquawk", "zerohedge"]
 # minimum 5 posts per acc for some reason
 POSTS_PER_ACC = 5
