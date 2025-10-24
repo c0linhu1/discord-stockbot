@@ -1,24 +1,17 @@
-
 .env
 api_keys_emails.txt
 bot_data.db
-
-
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
-
 .venv/
 venv/
 env/
 ENV/
-
-
 .vscode/
 .idea/
 *.swp
-
 .DS_Store
 

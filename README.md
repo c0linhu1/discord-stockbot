@@ -6,7 +6,7 @@ A Discord bot that provides financial news and stock market information.
 - Real-time financial news from Finnhub and Marketaux
 - Stock price tracking and watchlists
 - Automated news updates every few minutes
-- Private watchlist channels for users
+- Private watchlist channels for users  
 - Interactive stock information buttons
 
 ## Setup

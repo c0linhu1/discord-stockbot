@@ -42,7 +42,7 @@ def make_identifier(article, prefix=""):
     url = article.get("url", "")
     raw = f"{prefix}{headline}-{timestamp}-{url}"
     return hashlib.sha256(raw.encode()).hexdigest()
-
+    
 
 class NewsCog(commands.Cog):
     def __init__(self, bot):
