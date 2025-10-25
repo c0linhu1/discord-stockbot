@@ -3,7 +3,9 @@
 A Discord bot that provides financial news and stock market information.
 
 ## Features
-- Real-time financial news from Finnhub and Marketaux
+- Real-time financial news from Finnhub API, Marketaux API, and Twitter API
+    - Posts from news sources such as CNBC, CoinDesk, Financial Post, MarketWatch, 
+      BusinessWire, financial twitter accounts, etc. 
 - Stock price tracking and watchlists
 - Automated news updates every few minutes
 - Private watchlist channels for users  
@@ -17,6 +19,7 @@ A Discord bot that provides financial news and stock market information.
 - Finnhub API Keys
 - Marketaux API Keys
 - Twitter API Keys
+
 ### Installation
 
 1. Clone the repository:
