@@ -11,7 +11,7 @@ class StockInfoButton(discord.ui.View):
         super().__init__(timeout=300)  # 5 minute timeout
         
         # Add buttons for each symbol (max 25 buttons per view)
-        for symbol in symbols[:25]:  # Discord limit
+        for symbol in symbols[:25]:  
             button = discord.ui.Button(
                 label=f"📊 {symbol}",
                 style=discord.ButtonStyle.secondary,
