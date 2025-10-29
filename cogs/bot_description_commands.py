@@ -15,7 +15,7 @@ class BotHelp(commands.Cog):
         self.last_post_attempt = {} 
         self.cooldown_seconds = 5  
 
-    def get_description_text(self) -> str:
+    def get_description_text(self):
         """Reads the description from a txt file."""
         try:
             if self.description_file.exists():
@@ -107,7 +107,7 @@ class BotHelp(commands.Cog):
         except (discord.Forbidden, discord.HTTPException) as e:
             print(f"Could not clean up old help messages: {e}")
 
-    def _build_help_embed(self) -> discord.Embed:
+    def _build_help_embed(self):
         """Build the help embed."""
         embed = discord.Embed(
             title="🤖 Bot Description + Commands",

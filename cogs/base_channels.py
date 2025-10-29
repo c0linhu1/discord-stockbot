@@ -52,7 +52,7 @@ class BaseChannels(commands.Cog):
         except Exception as e:
             print(f"Unexpected error with '{channel_name}' in {guild.name}: {type(e).__name__}: {e}")
 
-    def _build_overwrites(self, guild: discord.Guild) -> dict:
+    def _build_overwrites(self, guild: discord.Guild):
         """Build permission overwrites for channels."""
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(
