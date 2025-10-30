@@ -79,7 +79,7 @@ class NewsCog(commands.Cog):
 
         # create heartbeat if no new news
         if not sent_any:
-            now = datetime.utcnow()
+            now = datetime.now()
             last_sent = db_manager.get_last_heartbeat(guild.id)
 
             if not last_sent or now - last_sent >= HEARTBEAT_COOLDOWN:

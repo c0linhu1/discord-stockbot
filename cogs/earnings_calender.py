@@ -90,8 +90,8 @@ class EarningsCalendar(commands.Cog):
         # returning just the list of companies that are in price range
         return filtered_earnings
     
-    def build_single_day_embed(self, date, earnings_list):
-        """Building a Discord embed for a each days earnings"""
+    def build_single_day_embeds(self, date, earnings_list):
+        """Building Discord embeds for a day's earnings - splits if too large"""
         # Format date nicely
         try:
             date_obj = datetime.strptime(date, '%Y-%m-%d')
@@ -99,55 +99,58 @@ class EarningsCalendar(commands.Cog):
         except:
             formatted_date = date
         
-        embed = discord.Embed(
-            title=f"📅 Earnings: {formatted_date}",
-            description=f"**{len(earnings_list)} companies** reporting earnings",
-            color=discord.Color.blue(),
-            timestamp=datetime.now(timezone.utc)
-        )
-        
-        chunk_size = 15  # testing 15 companies per field so no overload
-        
-        # looping by chunksize 
-        for i in range(0, len(earnings_list), chunk_size):
-            chunk = earnings_list[i:i + chunk_size]
+        # Build entries first
+        entries = []
+        for earning in earnings_list:
+            symbol = earning.get('symbol', 'N/A')
+            eps_estimate = earning.get('epsEstimate')
+            current_price = earning.get('current_price')
             
-            # Build the field value
-            entries = []
-            for earning in chunk:
-                symbol = earning.get('symbol', 'N/A')
-                # just adding eps 
-                eps_estimate = earning.get('epsEstimate')
-                current_price = earning.get('current_price')
-                
-                entry = f"**{symbol}**"
-                if current_price is not None:
-                    entry += f" • ${current_price:.2f}"
-                if eps_estimate is not None:
-                    entry += f" • EPS: ${eps_estimate}"
-                
-                # adding finalized string to list of stock w info of price and eps estimate
-                entries.append(entry)
+            entry = f"**{symbol}**"
+            if current_price is not None:
+                entry += f" • ${current_price:.2f}"
+            if eps_estimate is not None:
+                entry += f" • EPS: ${eps_estimate}"
             
-            # Determine field name
-            if i == 0:
-                field_name = "Companies"
+            entries.append(entry)
+        
+        # Split entries into chunks that fit in embeds
+        embeds = []
+        chunk_size = 25  # Companies per embed (conservative)
+        
+        for i in range(0, len(entries), chunk_size):
+            chunk = entries[i:i + chunk_size]
+            
+            # Determine if this is first, middle, or last embed
+            part_num = (i // chunk_size) + 1
+            total_parts = (len(entries) + chunk_size - 1) // chunk_size
+            
+            if total_parts > 1:
+                title = f"📅 Earnings: {formatted_date} (Part {part_num}/{total_parts})"
             else:
-                field_name = f"Companies (Part {i//chunk_size + 1})"
+                title = f"📅 Earnings: {formatted_date}"
             
-            # using fields so no overload
+            embed = discord.Embed(
+                title=title,
+                description=f"**{len(earnings_list)} companies** reporting earnings" if part_num == 1 else None,
+                color=discord.Color.blue(),
+                timestamp=datetime.now(timezone.utc)
+            )
+            
             embed.add_field(
-                name=field_name,
-                value="\n".join(entries),
+                name="Companies",
+                value="\n".join(chunk),
                 inline=False
             )
+            
+            embed.set_footer(text=f"Price Range: ${MIN_PRICE}-${MAX_PRICE} • Data from Finnhub")
+            embeds.append(embed)
         
-        embed.set_footer(text=f"Price Range: ${MIN_PRICE}-${MAX_PRICE} • Data from Finnhub")
-        return embed
+        return embeds
     
     @tasks.loop(hours=24)
     async def post_daily_earnings(self):
-        """Post earnings calendar once daily - one embed per day"""
+        """Post earnings calendar once daily - multiple embeds per day if needed"""
         await self.bot.wait_until_ready()
         
         # Fetch earnings data
@@ -177,7 +180,7 @@ class EarningsCalendar(commands.Cog):
                 continue
             
             try:
-                # Cleariong channel first
+                # Clearing channel first
                 await channel.purge(limit=None)
 
                 # Post summary embed after
@@ -209,12 +212,14 @@ class EarningsCalendar(commands.Cog):
                 await channel.send(embed=summary_embed)
                 await asyncio.sleep(0.5)  # creating delay between messages
                 
-                # Post one embed per day
+                # Post embeds for each day (may be multiple per day)
                 for date in sorted(earnings_by_date.keys()):
                     earnings_list = earnings_by_date[date]
-                    embed = self.build_single_day_embed(date, earnings_list)
-                    await channel.send(embed=embed)
-                    await asyncio.sleep(0.5)  # Rate limit protection
+                    embeds = self.build_single_day_embeds(date, earnings_list)
+                    
+                    for embed in embeds:
+                        await channel.send(embed=embed)
+                        await asyncio.sleep(0.5)  # Rate limit protection
                 
                 print(f"Posted {len(earnings_by_date)} day(s) of earnings to {guild.name}")
                 

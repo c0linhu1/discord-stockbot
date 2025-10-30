@@ -27,7 +27,7 @@ class BotHelp(commands.Cog):
     async def post_help_message(self, guild: discord.Guild):
         """Posts or updates the help embed without duplicates - now fully atomic."""
         # Cooldown check to prevent spam
-        now = datetime.utcnow()
+        now = datetime.now()
         last_attempt = self.last_post_attempt.get(guild.id)
         if last_attempt and (now - last_attempt).total_seconds() < self.cooldown_seconds:
             # print(f"Skipping description post for {guild.name} - cooldown active")

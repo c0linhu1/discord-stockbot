@@ -131,8 +131,8 @@ class Watchlist(commands.Cog):
 
         # Make a watchlist limit
         watchlist_count = db_manager.get_watchlist_count(user.id, guild.id)
-        if watchlist_count > 15:
-            message = "You watchlist is full. Maximum 15 companies allowed. " \
+        if watchlist_count > 25:
+            message = "You watchlist is full. Maximum 25 companies allowed. " \
             "Please use the '/remove_company' command to make space"
             await response_handler.send_response(interaction, message)
             

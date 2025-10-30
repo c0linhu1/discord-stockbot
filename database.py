@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean, Index
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean, Float, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -12,19 +12,18 @@ class HelpMessage(Base):
     id = Column(Integer, primary_key=True)
     guild_id = Column(Integer, nullable=False, unique=True)
     message_id = Column(Integer, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 class SeenArticle(Base):
     __tablename__ = 'seen_articles'
     
     id = Column(Integer, primary_key=True)
     guild_id = Column(Integer, nullable=False)
-    article_identifier = Column(String(64), nullable=False)  # SHA256 hash
-    source = Column(String(20), nullable=False)  # 'finnhub' or 'marketaux'
-    created_at = Column(DateTime, default=datetime.utcnow)
+    article_identifier = Column(String(64), nullable=False)
+    source = Column(String(20), nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
     
-    # Index for faster lookups
     __table_args__ = (
         Index('idx_guild_article', 'guild_id', 'article_identifier'),
         Index('idx_guild_created', 'guild_id', 'created_at'),
@@ -36,8 +35,8 @@ class GuildHeartbeat(Base):
     id = Column(Integer, primary_key=True)
     guild_id = Column(Integer, nullable=False, unique=True)
     last_heartbeat = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 class WatchlistItem(Base):
     __tablename__ = 'watchlist_items'
@@ -45,49 +44,83 @@ class WatchlistItem(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, nullable=False)
     guild_id = Column(Integer, nullable=False)
-    symbol = Column(String(20), nullable=False)  # Stock symbol (e.g., AAPL, TSLA)
-    company_name = Column(String(200))  # Optional company name
-    created_at = Column(DateTime, default=datetime.utcnow)
+    symbol = Column(String(20), nullable=False)
+    company_name = Column(String(200))
+    created_at = Column(DateTime, default=datetime.now)
     
-    # Index for faster lookups and ensure no duplicates
     __table_args__ = (
         Index('idx_user_guild', 'user_id', 'guild_id'),
         Index('idx_user_guild_symbol', 'user_id', 'guild_id', 'symbol', unique=True),
+    )
+
+class PortfolioPosition(Base):
+    __tablename__ = 'portfolio_positions'
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=False)
+    guild_id = Column(Integer, nullable=False)
+    symbol = Column(String(20), nullable=False)
+    shares = Column(Float, nullable=False)
+    total_cost = Column(Float, nullable=False)
+    average_price = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    
+    __table_args__ = (
+        Index('idx_portfolio_user_guild', 'user_id', 'guild_id'),
+        Index('idx_portfolio_user_guild_symbol', 'user_id', 'guild_id', 'symbol', unique=True),
+    )
+
+class UserStats(Base):
+    __tablename__ = 'user_stats'
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=False)
+    guild_id = Column(Integer, nullable=False)
+    total_realized_pnl = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    
+    __table_args__ = (
+        Index('idx_user_stats', 'user_id', 'guild_id', unique=True),
     )
 
 class DatabaseManager:
     def __init__(self, database_url='sqlite:///bot_data.db'):
         self.engine = create_engine(database_url, echo=False)
         self.SessionLocal = sessionmaker(bind=self.engine)
-        
-        # Create tables
         Base.metadata.create_all(bind=self.engine)
-        
-        # Clean up old articles on startup (keep last 500 per guild)
         self.cleanup_old_articles()
         
     def get_session(self):
-        """Get a new database session"""
         return self.SessionLocal()
     
+    # Helper method to reduce repetition
+    def _get_or_create(self, session, model, defaults=None, **kwargs):
+        """Get existing record or create new one"""
+        instance = session.query(model).filter_by(**kwargs).first()
+        if instance:
+            return instance, False
+        else:
+            params = dict(kwargs)
+            if defaults:
+                params.update(defaults)
+            instance = model(**params)
+            session.add(instance)
+            return instance, True
+    
     def cleanup_old_articles(self):
-        """Remove old articles, keeping only the most recent 500 per guild"""
         with self.get_session() as session:
             try:
-                # Get all guilds that have articles
                 guilds = session.query(SeenArticle.guild_id).distinct().all()
-                
                 for (guild_id,) in guilds:
-                    # Get all articles for this guild, ordered by creation time (newest first)
                     articles = session.query(SeenArticle)\
                         .filter(SeenArticle.guild_id == guild_id)\
                         .order_by(SeenArticle.created_at.desc())\
                         .all()
                     
-                    # If more than 500, delete the oldest ones
                     if len(articles) > 500:
-                        articles_to_delete = articles[500:]
-                        for article in articles_to_delete:
+                        for article in articles[500:]:
                             session.delete(article)
                 
                 session.commit()
@@ -95,68 +128,47 @@ class DatabaseManager:
                 print(f"Error during cleanup: {e}")
                 session.rollback()
     
-    # Help Messages methods
-    def get_help_message_id(self, guild_id: int) -> int:
-        """Get the stored help message ID for a guild"""
+    # Help Messages
+    def get_help_message_id(self, guild_id):
         with self.get_session() as session:
             help_msg = session.query(HelpMessage).filter(HelpMessage.guild_id == guild_id).first()
             return help_msg.message_id if help_msg else None
     
-    def save_help_message_id(self, guild_id: int, message_id: int):
-        """Save or update the help message ID for a guild"""
+    def save_help_message_id(self, guild_id, message_id):
         with self.get_session() as session:
             try:
                 help_msg = session.query(HelpMessage).filter(HelpMessage.guild_id == guild_id).first()
-                
                 if help_msg:
                     help_msg.message_id = message_id
-                    help_msg.updated_at = datetime.utcnow()
+                    help_msg.updated_at = datetime.now()
                 else:
                     help_msg = HelpMessage(guild_id=guild_id, message_id=message_id)
                     session.add(help_msg)
-                
                 session.commit()
             except Exception as e:
-                print(f"Error saving help message ID: {e}")
+                print(f"Error saving help message: {e}")
                 session.rollback()
     
-    # Seen Articles methods
-    def is_article_seen(self, guild_id: int, article_identifier: str) -> bool:
-        """Check if an article has been seen in a guild"""
+    # Seen Articles
+    def is_article_seen(self, guild_id, article_identifier):
         with self.get_session() as session:
-            article = session.query(SeenArticle)\
-                .filter(SeenArticle.guild_id == guild_id)\
-                .filter(SeenArticle.article_identifier == article_identifier)\
-                .first()
-            return article is not None
+            return session.query(SeenArticle)\
+                .filter_by(guild_id=guild_id, article_identifier=article_identifier)\
+                .first() is not None
     
-    def mark_article_seen(self, guild_id: int, article_identifier: str, source: str):
-        """Mark an article as seen in a guild"""
+    def mark_article_seen(self, guild_id, article_identifier, source):
         with self.get_session() as session:
             try:
-                # Check if already exists
-                existing = session.query(SeenArticle)\
-                    .filter(SeenArticle.guild_id == guild_id)\
-                    .filter(SeenArticle.article_identifier == article_identifier)\
-                    .first()
-                
-                if not existing:
-                    article = SeenArticle(
-                        guild_id=guild_id,
-                        article_identifier=article_identifier,
-                        source=source
-                    )
+                if not self.is_article_seen(guild_id, article_identifier):
+                    article = SeenArticle(guild_id=guild_id, article_identifier=article_identifier, source=source)
                     session.add(article)
                     session.commit()
-                    
-                    # Clean up old articles for this guild (keep only 500 most recent)
                     self.cleanup_guild_articles(session, guild_id)
             except Exception as e:
-                print(f"Error marking article as seen: {e}")
+                print(f"Error marking article: {e}")
                 session.rollback()
     
-    def cleanup_guild_articles(self, session, guild_id: int):
-        """Clean up old articles for a specific guild"""
+    def cleanup_guild_articles(self, session, guild_id):
         try:
             articles = session.query(SeenArticle)\
                 .filter(SeenArticle.guild_id == guild_id)\
@@ -164,66 +176,47 @@ class DatabaseManager:
                 .all()
             
             if len(articles) > 500:
-                articles_to_delete = articles[500:]
-                for article in articles_to_delete:
+                for article in articles[500:]:
                     session.delete(article)
                 session.commit()
         except Exception as e:
-            print(f"Error cleaning up guild articles: {e}")
+            print(f"Error cleaning articles: {e}")
             session.rollback()
     
-    # Heartbeat methods
-    def get_last_heartbeat(self, guild_id: int) -> datetime:
-        """Get the last heartbeat time for a guild"""
+    # Heartbeat
+    def get_last_heartbeat(self, guild_id):
         with self.get_session() as session:
-            heartbeat = session.query(GuildHeartbeat)\
-                .filter(GuildHeartbeat.guild_id == guild_id)\
-                .first()
+            heartbeat = session.query(GuildHeartbeat).filter_by(guild_id=guild_id).first()
             return heartbeat.last_heartbeat if heartbeat else None
     
-    def update_heartbeat(self, guild_id: int, timestamp: datetime):
-        """Update the heartbeat time for a guild"""
+    def update_heartbeat(self, guild_id, timestamp):
         with self.get_session() as session:
             try:
-                heartbeat = session.query(GuildHeartbeat)\
-                    .filter(GuildHeartbeat.guild_id == guild_id)\
-                    .first()
-                
+                heartbeat = session.query(GuildHeartbeat).filter_by(guild_id=guild_id).first()
                 if heartbeat:
                     heartbeat.last_heartbeat = timestamp
-                    heartbeat.updated_at = datetime.utcnow()
+                    heartbeat.updated_at = datetime.now()
                 else:
                     heartbeat = GuildHeartbeat(guild_id=guild_id, last_heartbeat=timestamp)
                     session.add(heartbeat)
-                
                 session.commit()
             except Exception as e:
                 print(f"Error updating heartbeat: {e}")
                 session.rollback()
 
-    # Watchlist methods
-    def add_to_watchlist(self, user_id: int, guild_id: int, symbol: str, company_name: str = None) -> bool:
-        """Add a company to user's watchlist. Returns True if added, False if already exists"""
+    # Watchlist
+    def add_to_watchlist(self, user_id, guild_id, symbol, company_name=None):
         with self.get_session() as session:
             try:
-                # Check if already exists
                 existing = session.query(WatchlistItem)\
-                    .filter(WatchlistItem.user_id == user_id)\
-                    .filter(WatchlistItem.guild_id == guild_id)\
-                    .filter(WatchlistItem.symbol == symbol.upper())\
+                    .filter_by(user_id=user_id, guild_id=guild_id, symbol=symbol.upper())\
                     .first()
                 
                 if existing:
-                    return False  # Already exists
+                    return False
                 
-                # Add new item
-                watchlist_item = WatchlistItem(
-                    user_id=user_id,
-                    guild_id=guild_id,
-                    symbol=symbol.upper(),
-                    company_name=company_name
-                )
-                session.add(watchlist_item)
+                item = WatchlistItem(user_id=user_id, guild_id=guild_id, symbol=symbol.upper(), company_name=company_name)
+                session.add(item)
                 session.commit()
                 return True
             except Exception as e:
@@ -231,14 +224,11 @@ class DatabaseManager:
                 session.rollback()
                 return False
     
-    def remove_from_watchlist(self, user_id: int, guild_id: int, symbol: str) -> bool:
-        """Remove a company from user's watchlist. Returns True if removed, False if not found"""
+    def remove_from_watchlist(self, user_id, guild_id, symbol):
         with self.get_session() as session:
             try:
                 item = session.query(WatchlistItem)\
-                    .filter(WatchlistItem.user_id == user_id)\
-                    .filter(WatchlistItem.guild_id == guild_id)\
-                    .filter(WatchlistItem.symbol == symbol.upper())\
+                    .filter_by(user_id=user_id, guild_id=guild_id, symbol=symbol.upper())\
                     .first()
                 
                 if item:
@@ -251,32 +241,171 @@ class DatabaseManager:
                 session.rollback()
                 return False
     
-    def get_user_watchlist(self, user_id: int, guild_id: int) -> list:
-        """Get all watchlist items for a user in a guild"""
+    def get_user_watchlist(self, user_id, guild_id):
         with self.get_session() as session:
             try:
                 items = session.query(WatchlistItem)\
-                    .filter(WatchlistItem.user_id == user_id)\
-                    .filter(WatchlistItem.guild_id == guild_id)\
+                    .filter_by(user_id=user_id, guild_id=guild_id)\
                     .order_by(WatchlistItem.symbol)\
                     .all()
                 
-                return [{
-                    'symbol': item.symbol,
-                    'company_name': item.company_name,
-                    'created_at': item.created_at
-                } for item in items]
+                return [{'symbol': i.symbol, 'company_name': i.company_name, 'created_at': i.created_at} for i in items]
             except Exception as e:
                 print(f"Error getting watchlist: {e}")
                 return []
             
-    def get_watchlist_count(self, user_id: int, guild_id: int) -> int:
-        """Get count of items in user's watchlist"""
+    def get_watchlist_count(self, user_id, guild_id):
         with self.get_session() as session:
-            return session.query(WatchlistItem)\
-                .filter(WatchlistItem.user_id == user_id)\
-                .filter(WatchlistItem.guild_id == guild_id)\
-                .count()
+            return session.query(WatchlistItem).filter_by(user_id=user_id, guild_id=guild_id).count()
+
+    # Portfolio
+    def add_portfolio_position(self, user_id, guild_id, symbol, quantity, price):
+        with self.get_session() as session:
+            try:
+                position = session.query(PortfolioPosition)\
+                    .filter_by(user_id=user_id, guild_id=guild_id, symbol=symbol.upper())\
+                    .first()
+                
+                if position:
+                    # Update existing
+                    new_shares = position.shares + quantity
+                    new_total = position.total_cost + (quantity * price)
+                    position.shares = new_shares
+                    position.total_cost = new_total
+                    position.average_price = new_total / new_shares
+                    position.updated_at = datetime.now()
+                else:
+                    # Create new
+                    position = PortfolioPosition(
+                        user_id=user_id, guild_id=guild_id, symbol=symbol.upper(),
+                        shares=quantity, total_cost=quantity * price, average_price=price
+                    )
+                    session.add(position)
+                
+                session.commit()
+                return True
+            except Exception as e:
+                print(f"Error adding position: {e}")
+                session.rollback()
+                return False
+    
+    def sell_portfolio_position(self, user_id, guild_id, symbol, quantity, price):
+        with self.get_session() as session:
+            try:
+                position = session.query(PortfolioPosition)\
+                    .filter_by(user_id=user_id, guild_id=guild_id, symbol=symbol.upper())\
+                    .first()
+                
+                if not position:
+                    return (False, f"❌ You don't own any **{symbol.upper()}** shares.")
+                
+                if position.shares < quantity:
+                    return (False, f"❌ You only have **{position.shares}** shares.")
+                
+                # Calculate P&L
+                profit_per_share = price - position.average_price
+                total_profit = profit_per_share * quantity
+                sale_value = quantity * price
+                
+                # Track realized P&L
+                self.add_realized_pnl(user_id, guild_id, total_profit)
+                
+                # Update position
+                new_shares = position.shares - quantity
+                
+                if new_shares == 0:
+                    session.delete(position)
+                    msg = f"✅ Sold all **{quantity} shares** of **{symbol.upper()}** at **${price:.2f}**\n" \
+                          f"Sale: ${sale_value:.2f} | P&L: ${total_profit:,.2f} ({profit_per_share/position.average_price*100:+.2f}%)"
+                else:
+                    position.shares = new_shares
+                    position.total_cost -= quantity * position.average_price
+                    position.updated_at = datetime.now()
+                    msg = f"✅ Sold **{quantity} shares** of **{symbol.upper()}** at **${price:.2f}**\n" \
+                          f"Sale: ${sale_value:.2f} | P&L: ${total_profit:,.2f} ({profit_per_share/position.average_price*100:+.2f}%)\n" \
+                          f"Remaining: **{new_shares} shares**"
+                
+                session.commit()
+                return (True, msg)
+                
+            except Exception as e:
+                print(f"Error selling position: {e}")
+                session.rollback()
+                return (False, f"❌ Error: {str(e)}")
+    
+    def get_user_portfolio(self, user_id, guild_id):
+        with self.get_session() as session:
+            try:
+                positions = session.query(PortfolioPosition)\
+                    .filter_by(user_id=user_id, guild_id=guild_id)\
+                    .order_by(PortfolioPosition.symbol)\
+                    .all()
+                
+                return [{'symbol': p.symbol, 'shares': p.shares, 'average_price': p.average_price, 
+                        'total_cost': p.total_cost, 'created_at': p.created_at, 'updated_at': p.updated_at} 
+                        for p in positions]
+            except Exception as e:
+                print(f"Error getting portfolio: {e}")
+                return []
+    
+    def get_portfolio_count(self, user_id, guild_id):
+        with self.get_session() as session:
+            return session.query(PortfolioPosition).filter_by(user_id=user_id, guild_id=guild_id).count()
+
+    def remove_portfolio_position(self, user_id, guild_id, symbol):
+        with self.get_session() as session:
+            try:
+                position = session.query(PortfolioPosition)\
+                    .filter_by(user_id=user_id, guild_id=guild_id, symbol=symbol.upper())\
+                    .first()
+                
+                if position:
+                    session.delete(position)
+                    session.commit()
+                    return True
+                return False
+            except Exception as e:
+                print(f"Error removing position: {e}")
+                session.rollback()
+                return False
+
+    # User Stats (Realized P&L)
+    def add_realized_pnl(self, user_id, guild_id, amount):
+        with self.get_session() as session:
+            try:
+                stats = session.query(UserStats).filter_by(user_id=user_id, guild_id=guild_id).first()
+                
+                if stats:
+                    stats.total_realized_pnl += amount
+                    stats.updated_at = datetime.now()
+                else:
+                    stats = UserStats(user_id=user_id, guild_id=guild_id, total_realized_pnl=amount)
+                    session.add(stats)
+                
+                session.commit()
+            except Exception as e:
+                print(f"Error adding P&L: {e}")
+                session.rollback()
+
+    def get_realized_pnl(self, user_id, guild_id):
+        with self.get_session() as session:
+            try:
+                stats = session.query(UserStats).filter_by(user_id=user_id, guild_id=guild_id).first()
+                return stats.total_realized_pnl if stats else 0.0
+            except Exception as e:
+                print(f"Error getting P&L: {e}")
+                return 0.0
+
+    def reset_realized_pnl(self, user_id, guild_id):
+        with self.get_session() as session:
+            try:
+                stats = session.query(UserStats).filter_by(user_id=user_id, guild_id=guild_id).first()
+                if stats:
+                    stats.total_realized_pnl = 0.0
+                    stats.updated_at = datetime.now()
+                    session.commit()
+            except Exception as e:
+                print(f"Error resetting P&L: {e}")
+                session.rollback()
         
-# Global database manager instance
 db_manager = DatabaseManager()
