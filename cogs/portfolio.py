@@ -197,7 +197,7 @@ class Portfolio(commands.Cog):
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(nam = "pnl", description = "Quick view of profit and loss")
+    @app_commands.command(name = "pnl", description = "Quick view of profit and loss")
     async def profit_loss(self, interaction: discord.Interaction):
         """Display total P&L including past sales"""
         await interaction.response.defer(ephemeral=True)
