@@ -1,9 +1,18 @@
+# creates connection to database - making sure we incorporate all datatypes used
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean, Float, Index
+# base class that models inherit from 
 from sqlalchemy.ext.declarative import declarative_base
+# incorporating database sessions 
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
 import os
 
+"""
+Using SQLalchemy so we can still use python while designing database with flexibility of SQL
+    - ORM - Object Relational mapper - technique that allows devs to interact with databases
+"""
+
+# base class - acts as registry for all the database models
 Base = declarative_base()
 
 class HelpMessage(Base):
@@ -24,6 +33,7 @@ class SeenArticle(Base):
     source = Column(String(20), nullable=False)
     created_at = Column(DateTime, default=datetime.now)
     
+    # composite indexes - so article lookups are faster
     __table_args__ = (
         Index('idx_guild_article', 'guild_id', 'article_identifier'),
         Index('idx_guild_created', 'guild_id', 'created_at'),
@@ -48,6 +58,8 @@ class WatchlistItem(Base):
     company_name = Column(String(200))
     created_at = Column(DateTime, default=datetime.now)
     
+
+    # using index for instant results - speed up database queries - dont need to scan each row
     __table_args__ = (
         Index('idx_user_guild', 'user_id', 'guild_id'),
         Index('idx_user_guild_symbol', 'user_id', 'guild_id', 'symbol', unique=True),
@@ -66,6 +78,8 @@ class PortfolioPosition(Base):
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     
+    # again creating indexes to make lookups faster 
+    # bot will lookup by user id and guild id rather than scanning entire table
     __table_args__ = (
         Index('idx_portfolio_user_guild', 'user_id', 'guild_id'),
         Index('idx_portfolio_user_guild_symbol', 'user_id', 'guild_id', 'symbol', unique=True),
@@ -85,47 +99,47 @@ class UserStats(Base):
         Index('idx_user_stats', 'user_id', 'guild_id', unique=True),
     )
 
+# this class is where api interacts with database 
 class DatabaseManager:
+    # creating a sqlite database file 
     def __init__(self, database_url='sqlite:///bot_data.db'):
+        # creating connection to database - basically translates python to SQL
         self.engine = create_engine(database_url, echo=False)
+        # creating session - connecting to database
         self.SessionLocal = sessionmaker(bind=self.engine)
-        Base.metadata.create_all(bind=self.engine)
+        # creating all tables if havent already - connecting to database
+        Base.metadata.create_all(bind=self.engine) 
+
+        # making sure old articles are cleaned on startup
         self.cleanup_old_articles()
         
+    # creating new database session helper method 
     def get_session(self):
         return self.SessionLocal()
     
-    # Helper method to reduce repetition
-    def _get_or_create(self, session, model, defaults=None, **kwargs):
-        """Get existing record or create new one"""
-        instance = session.query(model).filter_by(**kwargs).first()
-        if instance:
-            return instance, False
-        else:
-            params = dict(kwargs)
-            if defaults:
-                params.update(defaults)
-            instance = model(**params)
-            session.add(instance)
-            return instance, True
-    
     def cleanup_old_articles(self):
+        # closes session when done cleaning 
         with self.get_session() as session:
             try:
                 guilds = session.query(SeenArticle.guild_id).distinct().all()
                 for (guild_id,) in guilds:
+                    # getting articles through each server - starting from the newest one
                     articles = session.query(SeenArticle)\
                         .filter(SeenArticle.guild_id == guild_id)\
                         .order_by(SeenArticle.created_at.desc())\
                         .all()
                     
+                    # only keep most recent 500 articles
                     if len(articles) > 500:
                         for article in articles[500:]:
                             session.delete(article)
                 
+                # saving changes with this session
                 session.commit()
+
             except Exception as e:
                 print(f"Error during cleanup: {e}")
+                # if error undo changes made in current session
                 session.rollback()
     
     # Help Messages
@@ -244,6 +258,7 @@ class DatabaseManager:
     def get_user_watchlist(self, user_id, guild_id):
         with self.get_session() as session:
             try:
+                # getting watchlist based on user id and guild id 
                 items = session.query(WatchlistItem)\
                     .filter_by(user_id=user_id, guild_id=guild_id)\
                     .order_by(WatchlistItem.symbol)\
@@ -253,7 +268,7 @@ class DatabaseManager:
             except Exception as e:
                 print(f"Error getting watchlist: {e}")
                 return []
-            
+    
     def get_watchlist_count(self, user_id, guild_id):
         with self.get_session() as session:
             return session.query(WatchlistItem).filter_by(user_id=user_id, guild_id=guild_id).count()
@@ -408,4 +423,5 @@ class DatabaseManager:
                 print(f"Error resetting P&L: {e}")
                 session.rollback()
         
+# creating global instance of the database manager so i can import into other files
 db_manager = DatabaseManager()
