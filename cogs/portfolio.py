@@ -40,7 +40,8 @@ class Portfolio(commands.Cog):
         """Creates a private portfolio channel"""
         guild = interaction.guild
         user = interaction.user
-
+        
+        # adjusting channel perms 
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel = False),
             user: discord.PermissionOverwrite(view_channel = True, send_messages = True),
