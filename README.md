@@ -70,3 +70,8 @@ python main.py
 ## Twitter API
 - The api keys for twitter are the BEARER TOKENS
 - Free Twitter API has a 15 min cooldown time for each dev account 
+
+## FUTURE IMPLEMENTATIONS
+- Applying machine learning to analyze sentiment from articles
+- Incorporating a sentiment command and a scale for users to see whether or 
+not a stock is a buy hold sell based on sentiment score
