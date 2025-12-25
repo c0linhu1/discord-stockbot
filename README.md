@@ -1,6 +1,6 @@
 # Discord Stock Bot
 
-A Discord bot that provides financial news and stock market information.
+A Discord bot that provides financial news and stock market information. Implements multiple user commands and features to help beginner traders.
 
 ## Features
 - Real-time financial news from Finnhub API, Marketaux API, and Twitter API
@@ -13,7 +13,6 @@ A Discord bot that provides financial news and stock market information.
 - Interactive stock information buttons
 - Commands relating to managing watchlists and portfolios 
 
-## Setup
 
 ### Prerequisites
 - Python 3.8+
@@ -22,37 +21,6 @@ A Discord bot that provides financial news and stock market information.
 - Marketaux API Keys
 - Twitter API Keys
 
-### Installation
-
-1. Clone the repository:
-```bash
-git clone https://github.com/YOUR_USERNAME/discord-stock-bot.git
-cd discord-stock-bot
-```
-
-2. Create a virtual environment:
-```bash
-python -m venv .venv
-source .venv/bin/activate 
-
-```
-
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-4. Create a `.env` file in the project root (copy from `.env.example`):
-```bash
-cp .env.example .env
-```
-
-5. Edit `.env` and add your actual API keys
-
-6. Run the bot:
-```bash
-python main.py
-```
 
 ## Required Discord Bot Permissions
 - Read Messages/View Channels
@@ -84,3 +52,4 @@ too - could technically try to do it myself but would require too many api calls
 - implement forex/crypto commands 
 - implement ipo commands or a channel that shows upcoming ipos
 - implement a channel for sec fillings 
+- implement personal trading strategy - maybe llm - using 9/20 ema, 50 sma
